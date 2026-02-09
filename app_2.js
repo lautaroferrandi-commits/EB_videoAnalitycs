@@ -67,15 +67,6 @@ function truncateLabel(s, max = 22) {
   return s.slice(0, Math.max(0, max - 1)) + '…';
 }
 
-// Para search (normaliza texto)
-function normText(s) {
-  return String(s ?? '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // quita acentos
-    .trim();
-}
-
 // -----------------------------
 // Aggregation helpers (1 platform por video)
 // -----------------------------
@@ -123,10 +114,7 @@ const state = {
   editingId: null,
 
   dateFrom: '',
-  dateTo: '',
-
-  // ✅ NUEVO: search por título
-  searchQuery: ''
+  dateTo: ''
 };
 
 const el = {
@@ -155,10 +143,6 @@ const el = {
   dateFrom: document.getElementById('dateFrom'),
   dateTo: document.getElementById('dateTo'),
   clearDatesBtn: document.getElementById('clearDatesBtn'),
-
-  // ✅ NUEVO: search input + clear
-  searchInput: document.getElementById('videoSearch'),
-  clearSearchBtn: document.getElementById('clearSearchBtn'),
 
   // Form
   form: document.getElementById('videoForm'),
@@ -204,6 +188,7 @@ async function cloudLoadAll() {
     return false;
   }
 
+  // ✅ ESTE ERA EL BUG: faltaba guardar los datos en state.videos
   state.videos = Array.isArray(data) ? data : [];
   setCloudStatus('OK (cloud sync)');
   return true;
@@ -266,17 +251,8 @@ function withinDateRange(videoIso) {
   return true;
 }
 
-function matchesSearch(video) {
-  const q = normText(state.searchQuery);
-  if (!q) return true;
-  const t = normText(video?.title);
-  return t.includes(q);
-}
-
 function getFilteredVideos() {
-  return state.videos
-    .filter(v => withinDateRange(v.date))
-    .filter(v => matchesSearch(v));
+  return state.videos.filter(v => withinDateRange(v.date));
 }
 
 function setDateFilters(from, to) {
@@ -284,15 +260,6 @@ function setDateFilters(from, to) {
   state.dateTo = to || '';
   if (el.dateFrom) el.dateFrom.value = state.dateFrom;
   if (el.dateTo) el.dateTo.value = state.dateTo;
-  render();
-}
-
-// ✅ NUEVO: set search
-function setSearchQuery(q) {
-  state.searchQuery = q || '';
-  if (el.searchInput && el.searchInput.value !== state.searchQuery) {
-    el.searchInput.value = state.searchQuery;
-  }
   render();
 }
 
@@ -390,6 +357,7 @@ async function deleteVideo(id) {
 async function upsertFromForm(e) {
   e.preventDefault();
 
+  // UX: feedback visible y quedarse en Add/Edit
   el.saveBtn.disabled = true;
   const originalBtnText = el.saveBtn.textContent;
   el.saveBtn.textContent = 'Saving…';
@@ -436,7 +404,10 @@ async function upsertFromForm(e) {
     setCloudStatus('✅ Guardado correctamente');
   }
 
+  // Mantener en el formulario, pero limpiar para cargar otro
   resetForm();
+
+  // Actualizar dashboard aunque no navegues
   render();
 
   finish();
@@ -475,8 +446,7 @@ function renderTable() {
   const videos = getFilteredVideos();
 
   if (videos.length === 0) {
-    const hint = state.searchQuery ? `No hay resultados para “${escapeHtml(state.searchQuery)}”.` : 'No hay videos en el rango seleccionado.';
-    el.table.innerHTML = `<tr><td class="empty" colspan="11">${hint} Prueba “Clear (All dates)”.</td></tr>`;
+    el.table.innerHTML = `<tr><td class="empty" colspan="11">No hay videos en el rango seleccionado. Prueba “Clear (All dates)”.</td></tr>`;
     return;
   }
 
@@ -517,7 +487,7 @@ function renderTable() {
 function renderRanking() {
   const videos = getFilteredVideos();
   if (videos.length === 0) {
-    el.rankingList.innerHTML = `<div class="empty">No hay datos con los filtros actuales.</div>`;
+    el.rankingList.innerHTML = `<div class="empty">No hay datos en el rango de fechas seleccionado.</div>`;
     return;
   }
 
@@ -679,21 +649,10 @@ async function init() {
   el.dateTo.addEventListener('change', () => setDateFilters(el.dateFrom.value, el.dateTo.value));
   el.clearDatesBtn.addEventListener('click', () => setDateFilters('', ''));
 
-  // ✅ NUEVO: search events
-  if (el.searchInput) {
-    el.searchInput.addEventListener('input', () => setSearchQuery(el.searchInput.value));
-  }
-  if (el.clearSearchBtn) {
-    el.clearSearchBtn.addEventListener('click', () => setSearchQuery(''));
-  }
-
   state.metric = el.metricSelect.value;
   state.rankSort = el.rankSort.value;
   populatePlatformFilters();
   setPlatformFilter('all');
-
-  // Inicializa search UI si existe
-  if (el.searchInput) el.searchInput.value = state.searchQuery;
 
   resetForm();
 
