@@ -10,7 +10,7 @@ const msg = document.getElementById("msg");
 
 // Si ya está logueado, ir directo al dashboard
 if (localStorage.getItem(TOKEN_KEY) === "1") {
-  window.location.href = "./index.html";
+  window.location.href = "./dashboard.html";
 }
 
 form.addEventListener("submit", (e) => {
@@ -28,7 +28,7 @@ form.addEventListener("submit", (e) => {
     localStorage.setItem(TOKEN_KEY, "1");
     msg.className = "msg ok";
     msg.textContent = "✅ Login correcto. Redirigiendo…";
-    setTimeout(() => (window.location.href = "./index.html"), 350);
+    setTimeout(() => (window.location.href = "./dashboard.html"), 350);
     return;
   }
 
