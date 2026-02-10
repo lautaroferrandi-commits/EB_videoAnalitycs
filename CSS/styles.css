@@ -413,3 +413,21 @@ input:focus, select:focus { box-shadow: 0 0 0 4px var(--focus); border-color: va
   box-shadow: 0 0 0 4px var(--focus);
   border-color: var(--primary);
 }
+
+#metricChart, #metricTimeChart { height: 320px; }
+
+.watermark{
+  position: fixed;
+  right: 14px;
+  bottom: 12px;
+  font-size: 11px;
+  font-weight: 800;
+  color: rgba(17, 24, 39, 0.45); /* similar a tu --text con transparencia */
+  background: rgba(255, 255, 255, 0.65);
+  border: 1px solid rgba(229, 231, 235, 0.7); /* similar a --border */
+  padding: 6px 10px;
+  border-radius: 999px;
+  backdrop-filter: blur(6px);
+  z-index: 9999;
+  pointer-events: none; /* no molesta clicks */
+}

@@ -184,8 +184,33 @@ const el = {
   cloudStatus: document.getElementById('cloudStatus')
 };
 
-let chartMetric = null;
-let chartTime = null;
+let chartMetric = null; // ApexCharts instance
+let chartTime = null;   // ApexCharts instance
+
+// -----------------------------
+// Apex helpers
+// -----------------------------
+function destroyApex(chart) {
+  try { chart?.destroy?.(); } catch (e) {}
+  return null;
+}
+
+function apexBaseOptions() {
+  return {
+    chart: {
+      fontFamily: 'DM Sans, sans-serif',
+      toolbar: { show: false },
+      animations: { enabled: true }
+    },
+    dataLabels: { enabled: false },
+    grid: {
+      strokeDashArray: 4,
+      padding: { left: 6, right: 6, top: 0, bottom: 0 }
+    },
+    tooltip: { theme: 'light' }
+  };
+}
+
 
 // -----------------------------
 // Cloud (Supabase) CRUD
@@ -581,67 +606,140 @@ function renderCharts() {
   el.metricByVideoTitle.textContent = `${label} by Video · ${pfLabel}`;
   el.metricOverTimeTitle.textContent = `${label} over Time · ${pfLabel}`;
 
-  const videoLabelsFull = videos.map(v => v.title || '—');
-  const videoLabels = videoLabelsFull.map(t => truncateLabel(t, 24));
-  const videoData = videos.map(v => (aggregateVideoForPlatform(v, state.platformFilter)[metric] || 0));
+  // -----------------------------
+// 1) Bar chart (horizontal) - Apex (mejorado)
+// -----------------------------
+const metricAgg = videos.map(v => {
+  const a = aggregateVideoForPlatform(v, state.platformFilter);
+  return { v, value: Number(a[metric] || 0) };
+});
 
-  if (chartMetric) chartMetric.destroy();
-  chartMetric = new Chart(document.getElementById('metricChart'), {
+// Ordena por valor desc
+metricAgg.sort((a, b) => b.value - a.value);
+
+// ✅ Top N para que no quede ilegible (ajustá si querés)
+const TOP_N = 14;
+const top = metricAgg.slice(0, TOP_N);
+
+const videoTitlesFull = top.map(x => x.v.title || '—');
+const videoTitles = videoTitlesFull.map(t => truncateLabel(t, 30));
+const values = top.map(x => x.value);
+
+// Altura dinámica (así hay separación real entre labels)
+// 36px por item + margen
+const barHeight = Math.max(260, top.length * 36 + 40);
+
+const barOptions = {
+  ...apexBaseOptions(),
+  chart: {
+    ...apexBaseOptions().chart,
     type: 'bar',
-    data: {
-      labels: videoLabels.length ? videoLabels : ['—'],
-      datasets: [{ data: videoLabels.length ? videoData : [0], backgroundColor: '#ff355e', borderRadius: 8 }]
-    },
-    options: {
-      indexAxis: 'y',
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            title: (items) => {
-              const idx = items?.[0]?.dataIndex ?? 0;
-              return videoLabelsFull[idx] || '—';
-            },
-            label: (ctx) => `${label}: ${nf.format(ctx.parsed.x)}`
-          }
-        }
-      },
-      scales: { y: { ticks: { autoSkip: false } }, x: { ticks: { precision: 0 } } }
+    height: barHeight,
+    parentHeightOffset: 0,
+    // ✅ permite scroll si el chart es más alto que la card
+    // (esto funciona si el contenedor tiene altura fija, ver CSS)
+  },
+  plotOptions: {
+    bar: {
+      horizontal: true,
+      borderRadius: 8,
+      barHeight: '55%' // ✅ más aire entre barras
     }
-  });
+  },
+  series: [{ name: label, data: values.length ? values : [0] }],
+  xaxis: {
+    categories: videoTitles.length ? videoTitles : ['—'],
+    labels: {
+      style: { fontWeight: 700 },
+      formatter: (val) => nf.format(val) // ✅ números más lindos
+    }
+  },
+  yaxis: {
+    labels: {
+      style: { fontWeight: 800 },
+      maxWidth: 220 // ✅ evita que se amontonen hacia el chart
+    }
+  },
+  grid: {
+    strokeDashArray: 4,
+    padding: { left: 10, right: 18, top: 0, bottom: 14 } // ✅ espacio abajo para el eje X
+  },
+  tooltip: {
+    y: { formatter: (val) => nf.format(val) },
+    x: {
+      formatter: (_, opts) => {
+        const i = opts?.dataPointIndex ?? 0;
+        return videoTitlesFull[i] || '—';
+      }
+    }
+  },
+  colors: ['#ff355e'],
+};
 
+const barEl = document.getElementById('metricChart');
+if (barEl) {
+  // ✅ Para que haya scroll dentro de la card:
+  // hacemos que el contenedor scrollee si el chart es más alto
+  barEl.style.overflowY = 'auto';
+  barEl.style.maxHeight = '320px'; // debe coincidir con tu CSS
+  barEl.style.paddingRight = '6px'; // evita que el scroll tape el contenido
+
+  chartMetric = destroyApex(chartMetric);
+  chartMetric = new ApexCharts(barEl, barOptions);
+  chartMetric.render();
+}
+
+
+  // -----------------------------
+  // 2) Line chart (time series) - Apex
+  // -----------------------------
   const byDate = new Map();
   for (const v of videos) {
-    const d = v.date || '—';
+    const d = v.date || '';
+    if (!d) continue;
     const a = aggregateVideoForPlatform(v, state.platformFilter);
-    byDate.set(d, (byDate.get(d) || 0) + (Number(a[metric]) || 0));
+    byDate.set(d, (byDate.get(d) || 0) + Number(a[metric] || 0));
   }
 
-  const dates = Array.from(byDate.keys()).filter(d => d !== '—').sort((a, b) => a.localeCompare(b));
-  const timeLabels = dates.length ? dates.map(formatDateISO) : ['—'];
-  const timeData = dates.length ? dates.map(d => byDate.get(d) || 0) : [0];
+  const dates = Array.from(byDate.keys()).sort((a, b) => a.localeCompare(b));
+  const timeSeries = dates.map(d => ({
+    x: formatDateISO(d),
+    y: byDate.get(d) || 0
+  }));
 
-  if (chartTime) chartTime.destroy();
-  chartTime = new Chart(document.getElementById('metricTimeChart'), {
-    type: 'line',
-    data: {
-      labels: timeLabels,
-      datasets: [{
-        data: timeData,
-        borderColor: '#ff355e',
-        backgroundColor: 'rgba(255,53,94,0.2)',
-        fill: true,
-        tension: 0.3,
-        pointRadius: 3
-      }]
+  const lineOptions = {
+    ...apexBaseOptions(),
+    chart: {
+      ...apexBaseOptions().chart,
+      type: 'area',
+      height: 300
     },
-    options: {
-      maintainAspectRatio: false,
-      plugins: { legend: { display: false } }
-    }
-  });
+    stroke: { curve: 'smooth', width: 3 },
+    fill: { type: 'solid', opacity: 0.18 },
+    series: [
+      { name: label, data: timeSeries.length ? timeSeries : [{ x: '—', y: 0 }] }
+    ],
+    xaxis: {
+      type: 'category',
+      labels: { rotate: 0, style: { fontWeight: 700 } }
+    },
+    yaxis: {
+      labels: { formatter: (val) => nf.format(val), style: { fontWeight: 800 } }
+    },
+    tooltip: {
+      y: { formatter: (val) => nf.format(val) }
+    },
+    colors: ['#ff355e']
+  };
+
+  const lineEl = document.getElementById('metricTimeChart');
+  if (lineEl) {
+    chartTime = destroyApex(chartTime);
+    chartTime = new ApexCharts(lineEl, lineOptions);
+    chartTime.render();
+  }
 }
+
 
 function render() {
   renderTotals();
